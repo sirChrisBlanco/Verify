@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VeriFact AI - Browser Extension & In-Page Fact Checker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            },
+            fact: {
+              bg: 'rgba(16, 185, 129, 0.15)',
+              border: '#10b981',
+              text: '#34d399'
+            },
+            fake: {
+              bg: 'rgba(244, 63, 94, 0.15)',
+              border: '#f43f5e',
+              text: '#fb7185'
+            },
+            suspicious: {
+              bg: 'rgba(245, 158, 11, 0.15)',
+              border: '#f59e0b',
+              text: '#fbbf24'
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .badge-pulse-fact {
+      box-shadow: 0 0 12px rgba(16, 185, 129, 0.4);
+    }
+    
+    .badge-pulse-fake {
+      box-shadow: 0 0 12px rgba(244, 63, 94, 0.4);
+    }
+
+    .badge-pulse-warn {
+      box-shadow: 0 0 12px rgba(245, 158, 11, 0.4);
+    }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col font-sans antialiased bg-slate-950 text-slate-100 overflow-x-hidden">
+
+  <!-- SIMULATED BROWSER TOOLBAR -->
+  <header class="bg-slate-900 border-b border-slate-800 px-4 py-2 flex items-center justify-between text-xs text-slate-400 select-none z-30 sticky top-0">
+    <div class="flex items-center gap-3 w-1/4">
+      <div class="flex items-center gap-1.5">
+        <span class="w-3 h-3 rounded-full bg-rose-500/80 inline-block"></span>
+        <span class="w-3 h-3 rounded-full bg-amber-500/80 inline-block"></span>
+        <span class="w-3 h-3 rounded-full bg-emerald-500/80 inline-block"></span>
+      </div>
+      <div class="flex items-center gap-2 text-slate-500 ml-2">
+        <i data-lucide="chevron-left" class="w-4 h-4 cursor-pointer hover:text-slate-300"></i>
+        <i data-lucide="chevron-right" class="w-4 h-4 cursor-pointer hover:text-slate-300"></i>
+        <i data-lucide="rotate-cw" class="w-3.5 h-3.5 cursor-pointer hover:text-slate-300"></i>
+      </div>
+    </div>
+
+    <!-- URL Bar -->
+    <div class="flex-1 max-w-xl mx-4">
+      <div class="bg-slate-950 border border-slate-800 rounded-full px-4 py-1.5 flex items-center gap-2 text-slate-300 shadow-inner">
+        <i data-lucide="lock" class="w-3.5 h-3.5 text-emerald-400"></i>
+        <span class="text-slate-500">https://</span>
+        <span class="font-medium text-slate-200">newsfeed.social</span>
+        <span class="text-slate-500">/trending-posts</span>
+      </div>
+    </div>
+
+    <!-- Browser Extensions Area -->
+    <div class="flex items-center justify-end gap-3 w-1/4">
+      <div class="flex items-center gap-2 bg-slate-800/60 p-1 px-2 rounded-lg border border-slate-700/50">
+        <!-- VeriFact Extension Icon Button -->
+        <button id="extensionToggleBtn" onclick="toggleExtensionPopup()" class="relative p-1.5 rounded-md hover:bg-slate-700/70 text-indigo-400 transition-all focus:outline-none group">
+          <i data-lucide="shield-check" class="w-5 h-5 text-indigo-400 group-hover:scale-110 transition-transform"></i>
+          <!-- Badge counter on Extension Icon -->
+          <span class="absolute -top-1 -right-1 bg-rose-500 text-white font-bold text-[9px] w-4 h-4 rounded-full flex items-center justify-center animate-pulse border border-slate-900">2</span>
+        </button>
+        <button class="p-1.5 rounded-md hover:bg-slate-700/70 text-slate-400"><i data-lucide="puzzle" class="w-4 h-4"></i></button>
+        <button class="p-1.5 rounded-md hover:bg-slate-700/70 text-slate-400"><i data-lucide="more-vertical" class="w-4 h-4"></i></button>
+      </div>
+      <div class="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center font-bold text-white text-xs">
+        JD
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN CONTENT WRAPPER -->
+  <div class="flex-1 flex relative overflow-hidden">
+
+    <!-- SIMULATED SOCIAL MEDIA PAGE FEED -->
+    <main class="flex-1 overflow-y-auto px-4 py-8 max-w-4xl mx-auto w-full space-y-6 pb-24">
+      
+      <!-- Page Header Banner -->
+      <div class="flex items-center justify-between bg-slate-900/60 p-4 rounded-2xl border border-slate-800/80 mb-6">
+        <div class="flex items-center gap-3">
+          <div class="p-2.5 bg-indigo-500/10 rounded-xl text-indigo-400 border border-indigo-500/20">
+            <i data-lucide="globe" class="w-6 h-6"></i>
+          </div>
+          <div>
+            <h1 class="text-base font-semibold text-slate-100">Global News Stream</h1>
+            <p class="text-xs text-slate-400">VeriFact AI Real-time extension active on this tab</p>
+          </div>
+        </div>
+        
+        <div class="flex items-center gap-2">
+          <label class="inline-flex items-center cursor-pointer text-xs text-slate-400 gap-2">
+            <span>In-Page Badges</span>
+            <input type="checkbox" id="toggleBadgesCheckbox" checked onchange="toggleInPageBadges()" class="sr-only peer">
+            <div class="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600 relative"></div>
+          </label>
+        </div>
+      </div>
+
+      <!-- POST 1: FAKE / MISLEADING (High Confidence Fake) -->
+      <article class="bg-slate-900/90 rounded-2xl border border-slate-800 p-5 shadow-xl relative transition-all duration-200 hover:border-slate-700 group">
+        
+        <!-- INJECTED EXTENSION BADGE (TOP RIGHT OVERLAY) -->
+        <div class="verifact-injected-badge absolute -top-3 right-5 z-10">
+          <button onclick="openAIReviewModal(1)" class="badge-pulse-fake flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-950 border border-rose-500/60 text-rose-400 text-xs font-semibold shadow-2xl hover:scale-105 transition-all">
+            <span class="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
+            <i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-rose-400"></i>
+            <span>89% FAKE</span>
+            <span class="text-[10px] bg-rose-950 text-rose-300 px-1.5 py-0.5 rounded border border-rose-800/50">High Risk</span>
+          </button>
+        </div>
+
+        <!-- Post User Header -->
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-3">
+            <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80" class="w-10 h-10 rounded-full object-cover border border-slate-700" alt="Avatar">
+            <div>
+              <div class="flex items-center gap-1.5">
+                <h3 class="font-semibold text-sm text-slate-200">TechPulse Today</h3>
+                <i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-slate-500"></i>
+              </div>
+              <p class="text-xs text-slate-500">Posted 25 mins ago • Viral News</p>
+            </div>
+          </div>
+          <button class="text-slate-500 hover:text-slate-300"><i data-lucide="more-horizontal" class="w-5 h-5"></i></button>
+        </div>
+
+        <!-- Post Content -->
+        <h2 class="text-lg font-medium text-slate-100 mb-2 leading-snug">
+          🚨 BREAKING: NASA confirms Earth has captured a second moon in permanent orbit, visible to the naked eye starting tonight!
+        </h2>
+        <p class="text-sm text-slate-400 mb-4 line-clamp-2">
+          Astronomers at the Jet Propulsion Laboratory announced this afternoon that a giant rogue asteroid named 2026-XQ has permanently locked into Earth's gravitational field, forming a twin moon system...
+        </p>
+
+        <!-- Post Image -->
+        <div class="relative rounded-xl overflow-hidden mb-4 border border-slate-800">
+          <img src="https://images.unsplash.com/photo-1614728894747-a83421e2b9c9?w=800&auto=format&fit=crop&q=80" class="w-full h-56 object-cover" alt="Space Moon Image">
+          <div class="absolute bottom-2 left-2 bg-slate-950/80 backdrop-blur-md border border-slate-800 text-slate-300 text-xs px-2.5 py-1 rounded-md flex items-center gap-1.5">
+            <i data-lucide="image-off" class="w-3.5 h-3.5 text-rose-400"></i>
+            <span>AI Detector: CGI / Manipulated Image</span>
+          </div>
+        </div>
+
+        <!-- Injected AI Micro Summary Footer -->
+        <div class="bg-rose-950/30 border border-rose-900/40 rounded-xl p-3 mb-4 flex items-start gap-3">
+          <div class="p-1.5 bg-rose-500/20 text-rose-400 rounded-lg shrink-0 mt-0.5">
+            <i data-lucide="bot" class="w-4 h-4"></i>
+          </div>
+          <div class="flex-1 text-xs">
+            <p class="text-rose-200 font-medium mb-0.5">VeriFact AI Initial Assessment:</p>
+            <p class="text-slate-300">Debunked by NASA JPL official logs. Object 2026-XQ is a temporary mini-moon (2 meters wide) and completely invisible without specialized observatory equipment.</p>
+          </div>
+          <button onclick="openAIReviewModal(1)" class="px-2.5 py-1 bg-rose-900/60 hover:bg-rose-800/80 text-rose-200 text-xs font-medium rounded-lg transition-colors border border-rose-700/50 shrink-0">
+            Full AI Review
+          </button>
+        </div>
+
+        <!-- Engagement Bar -->
+        <div class="flex items-center justify-between text-slate-400 text-xs pt-2 border-t border-slate-800/80">
+          <div class="flex items-center gap-6">
+            <span class="flex items-center gap-1.5 cursor-pointer hover:text-slate-200"><i data-lucide="heart" class="w-4 h-4"></i> 14.2K</span>
+            <span class="flex items-center gap-1.5 cursor-pointer hover:text-slate-200"><i data-lucide="message-square" class="w-4 h-4"></i> 3.8K</span>
+            <span class="flex items-center gap-1.5 cursor-pointer hover:text-slate-200"><i data-lucide="share-2" class="w-4 h-4"></i> 890</span>
+          </div>
+          <span class="text-slate-500 text-[11px]">Injected by VeriFact Extension v2.4</span>
+        </div>
+      </article>
+
+      <!-- POST 2: VERIFIED FACT (High Confidence Fact) -->
+      <article class="bg-slate-900/90 rounded-2xl border border-slate-800 p-5 shadow-xl relative transition-all duration-200 hover:border-slate-700">
+        
+        <!-- INJECTED EXTENSION BADGE -->
+        <div class="verifact-injected-badge absolute -top-3 right-5 z-10">
+          <button onclick="openAIReviewModal(2)" class="badge-pulse-fact flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-950 border border-emerald-500/60 text-emerald-400 text-xs font-semibold shadow-2xl hover:scale-105 transition-all">
+            <i data-lucide="check-circle" class="w-3.5 h-3.5 text-emerald-400"></i>
+            <span>96% FACT</span>
+            <span class="text-[10px] bg-emerald-950 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-800/50">Verified Source</span>
+          </button>
+        </div>
+
+        <!-- Post User Header -->
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-3">
+            <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&auto=format&fit=crop&q=80" class="w-10 h-10 rounded-full object-cover border border-slate-700" alt="Avatar">
+            <div>
+              <div class="flex items-center gap-1.5">
+                <h3 class="font-semibold text-sm text-slate-200">Science Journal Direct</h3>
+                <i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-indigo-400"></i>
+              </div>
+              <p class="text-xs text-slate-500">Posted 2 hours ago • Science & Tech</p>
+            </div>
+          </div>
+          <button class="text-slate-500 hover:text-slate-300"><i data-lucide="more-horizontal" class="w-5 h-5"></i></button>
+        </div>
+
+        <!-- Post Content -->
+        <h2 class="text-lg font-medium text-slate-100 mb-2 leading-snug">
+          James Webb Space Telescope detects water vapor and carbon dioxide signatures on exoplanet WASP-96b atmosphere.
+        </h2>
+        <p class="text-sm text-slate-400 mb-4">
+          Peer-reviewed observations published in Nature Astrophysics confirm atmospheric composition detailed spectrum analyses from the NIRISS instrument...
+        </p>
+
+        <!-- Injected AI Micro Summary Footer -->
+        <div class="bg-emerald-950/30 border border-emerald-900/40 rounded-xl p-3 mb-4 flex items-start gap-3">
+          <div class="p-1.5 bg-emerald-500/20 text-emerald-400 rounded-lg shrink-0 mt-0.5">
+            <i data-lucide="shield-check" class="w-4 h-4"></i>
+          </div>
+          <div class="flex-1 text-xs">
+            <p class="text-emerald-200 font-medium mb-0.5">VeriFact AI Cross-Verification:</p>
+            <p class="text-slate-300">Cross-referenced with 4 academic archives (NASA, ESA, Nature Journal). 96% peer correlation.</p>
+          </div>
+          <button onclick="openAIReviewModal(2)" class="px-2.5 py-1 bg-emerald-900/60 hover:bg-emerald-800/80 text-emerald-200 text-xs font-medium rounded-lg transition-colors border border-emerald-700/50 shrink-0">
+            View References
+          </button>
+        </div>
+
+        <!-- Engagement Bar -->
+        <div class="flex items-center justify-between text-slate-400 text-xs pt-2 border-t border-slate-800/80">
+          <div class="flex items-center gap-6">
+            <span class="flex items-center gap-1.5 cursor-pointer hover:text-slate-200"><i data-lucide="heart" class="w-4 h-4"></i> 8.9K</span>
+            <span class="flex items-center gap-1.5 cursor-pointer hover:text-slate-200"><i data-lucide="message-square" class="w-4 h-4"></i> 412</span>
+            <span class="flex items-center gap-1.5 cursor-pointer hover:text-slate-200"><i data-lucide="share-2" class="w-4 h-4"></i> 1.2K</span>
+          </div>
+          <span class="text-slate-500 text-[11px]">Verified by VeriFact</span>
+        </div>
+      </article>
+
+      <!-- POST 3: SUSPICIOUS / MISLEADING -->
+      <article class="bg-slate-900/90 rounded-2xl border border-slate-800 p-5 shadow-xl relative transition-all duration-200 hover:border-slate-700">
+        
+        <!-- INJECTED EXTENSION BADGE -->
+        <div class="verifact-injected-badge absolute -top-3 right-5 z-10">
+          <button onclick="openAIReviewModal(3)" class="badge-pulse-warn flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-950 border border-amber-500/60 text-amber-400 text-xs font-semibold shadow-2xl hover:scale-105 transition-all">
+            <i data-lucide="help-circle" class="w-3.5 h-3.5 text-amber-400"></i>
+            <span>54% FAKE / MISLEADING</span>
+            <span class="text-[10px] bg-amber-950 text-amber-300 px-1.5 py-0.5 rounded border border-amber-800/50">Out of Context</span>
+          </button>
+        </div>
+
+        <!-- Post User Header -->
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-3">
+            <img src="https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=100&auto=format&fit=crop&q=80" class="w-10 h-10 rounded-full object-cover border border-slate-700" alt="Avatar">
+            <div>
+              <div class="flex items-center gap-1.5">
+                <h3 class="font-semibold text-sm text-slate-200">Health & Life Hacks</h3>
+              </div>
+              <p class="text-xs text-slate-500">Posted 5 hours ago • Wellness</p>
+            </div>
+          </div>
+          <button class="text-slate-500 hover:text-slate-300"><i data-lucide="more-horizontal" class="w-5 h-5"></i></button>
+        </div>
+
+        <!-- Post Content -->
+        <h2 class="text-lg font-medium text-slate-100 mb-2 leading-snug">
+          New clinical trial reveals drinking 3 cups of dark coffee daily completely eliminates risk of cognitive decline!
+        </h2>
+        <p class="text-sm text-slate-400 mb-4">
+          Scientists recommend everyone switch to black roast immediately as study shows 100% protection against memory loss...
+        </p>
+
+        <!-- Injected AI Micro Summary Footer -->
+        <div class="bg-amber-950/30 border border-amber-900/40 rounded-xl p-3 mb-4 flex items-start gap-3">
+          <div class="p-1.5 bg-amber-500/20 text-amber-400 rounded-lg shrink-0 mt-0.5">
+            <i data-lucide="alert-circle" class="w-4 h-4"></i>
+          </div>
+          <div class="flex-1 text-xs">
+            <p class="text-amber-200 font-medium mb-0.5">VeriFact AI Warning - Exaggerated Claim:</p>
+            <p class="text-slate-300">Study showed mild observational correlation only (12% lower incidence), NOT absolute prevention or causation. Headline is clickbait.</p>
+          </div>
+          <button onclick="openAIReviewModal(3)" class="px-2.5 py-1 bg-amber-900/60 hover:bg-amber-800/80 text-amber-200 text-xs font-medium rounded-lg transition-colors border border-amber-700/50 shrink-0">
+            Review Analysis
+          </button>
+        </div>
+
+        <!-- Engagement Bar -->
+        <div class="flex items-center justify-between text-slate-400 text-xs pt-2 border-t border-slate-800/80">
+          <div class="flex items-center gap-6">
+            <span class="flex items-center gap-1.5 cursor-pointer hover:text-slate-200"><i data-lucide="heart" class="w-4 h-4"></i> 22.1K</span>
+            <span class="flex items-center gap-1.5 cursor-pointer hover:text-slate-200"><i data-lucide="message-square" class="w-4 h-4"></i> 1.9K</span>
+          </div>
+          <span class="text-slate-500 text-[11px]">Flagged for review</span>
+        </div>
+      </article>
+
+    </main>
+
+    <!-- EXTENSION POPUP SIDE PANEL / FLOATING POPUP (Simulating Extension Popover UI) -->
+    <aside id="extensionPopup" class="w-96 glass-panel border-l border-slate-800 flex flex-col shadow-2xl z-20 absolute top-0 right-0 bottom-0 transition-transform duration-300 transform translate-x-0">
+      
+      <!-- Extension Top Header -->
+      <div class="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-black shadow-lg shadow-indigo-600/30">
+            <i data-lucide="shield-check" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h2 class="font-bold text-sm text-slate-100 flex items-center gap-1.5">
+              VeriFact AI <span class="bg-indigo-500/20 text-indigo-300 text-[10px] px-1.5 py-0.5 rounded font-mono border border-indigo-500/30">v2.4 PRO</span>
+            </h2>
+            <p class="text-[11px] text-slate-400">Page Authenticity Monitor</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-1">
+          <button onclick="toggleExtensionPopup()" class="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Extension Scrollable Body -->
+      <div class="flex-1 overflow-y-auto p-4 space-y-5">
+        
+        <!-- Active Page Trust Score Gauge -->
+        <div class="bg-slate-900/80 rounded-2xl p-4 border border-slate-800 text-center">
+          <span class="text-xs text-slate-400 font-medium uppercase tracking-wider block mb-2">Tab Overall Trust Score</span>
+          
+          <div class="relative w-32 h-32 mx-auto my-2 flex items-center justify-center">
+            <!-- Radial SVG Bar -->
+            <svg class="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+              <path class="text-slate-800" stroke-width="3.5" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+              <!-- Colored Meter for overall page trust score (e.g. 62% - Moderate) -->
+              <path class="text-amber-500 transition-all duration-1000 ease-out" stroke-dasharray="62, 100" stroke-width="3.5" stroke-linecap="rounded" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+            </svg>
+            <div class="absolute flex flex-col items-center justify-center">
+              <span class="text-3xl font-extrabold text-slate-100">62<span class="text-sm font-normal text-slate-400">%</span></span>
+              <span class="text-[10px] text-amber-400 font-semibold uppercase">Moderate Risk</span>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2 mt-3 text-center pt-3 border-t border-slate-800/60">
+            <div class="bg-emerald-950/30 p-2 rounded-lg border border-emerald-900/30">
+              <span class="block text-emerald-400 font-bold text-sm">1</span>
+              <span class="text-[10px] text-slate-400">Fact</span>
+            </div>
+            <div class="bg-rose-950/30 p-2 rounded-lg border border-rose-900/30">
+              <span class="block text-rose-400 font-bold text-sm">1</span>
+              <span class="text-[10px] text-slate-400">Fake</span>
+            </div>
+            <div class="bg-amber-950/30 p-2 rounded-lg border border-amber-900/30">
+              <span class="block text-amber-400 font-bold text-sm">1</span>
+              <span class="text-[10px] text-slate-400">Dubious</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Custom Headline / Text Instant Analyzer Tool -->
+        <div class="bg-slate-900/80 rounded-2xl p-4 border border-slate-800">
+          <div class="flex items-center gap-2 mb-2">
+            <i data-lucide="sparkles" class="w-4 h-4 text-indigo-400"></i>
+            <h3 class="text-xs font-semibold text-slate-200">Instant AI Check Sandbox</h3>
+          </div>
+          <p class="text-[11px] text-slate-400 mb-3">Paste any headline, tweet, or statement to check real-time truth probability.</p>
+          
+          <div class="space-y-2">
+            <textarea id="customScanInput" rows="2" placeholder="e.g. 'Scientists invent glass that never breaks when dropped...'" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors resize-none"></textarea>
+            
+            <button onclick="runCustomTextScan()" id="scanButton" class="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-600/20 active:scale-95">
+              <i data-lucide="search" class="w-3.5 h-3.5"></i>
+              <span>Analyze Statement</span>
+            </button>
+          </div>
+
+          <!-- Dynamic Result Output for Custom Scan -->
+          <div id="customScanResult" class="hidden mt-3 p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
+            <!-- Will be populated by JS -->
+          </div>
+        </div>
+
+        <!-- Detected Claims List on Page -->
+        <div class="space-y-2">
+          <div class="flex items-center justify-between text-xs px-1">
+            <span class="font-semibold text-slate-300">Claims Detected on Page</span>
+            <span class="text-slate-500 text-[10px]">3 Total</span>
+          </div>
+
+          <!-- Claim Item 1 -->
+          <div onclick="openAIReviewModal(1)" class="p-3 bg-slate-900/60 hover:bg-slate-800/80 border border-slate-800/80 rounded-xl cursor-pointer transition-all flex items-center justify-between group">
+            <div class="space-y-1 flex-1 pr-2">
+              <p class="text-xs text-slate-300 font-medium line-clamp-1 group-hover:text-indigo-300 transition-colors">NASA confirms Earth capture of second moon...</p>
+              <div class="flex items-center gap-2 text-[10px]">
+                <span class="text-rose-400 font-semibold">89% Fake</span>
+                <span class="text-slate-500">• False Narrative</span>
+              </div>
+            </div>
+            <i data-lucide="chevron-right" class="w-4 h-4 text-slate-600 group-hover:text-slate-300 transition-colors"></i>
+          </div>
+
+          <!-- Claim Item 2 -->
+          <div onclick="openAIReviewModal(2)" class="p-3 bg-slate-900/60 hover:bg-slate-800/80 border border-slate-800/80 rounded-xl cursor-pointer transition-all flex items-center justify-between group">
+            <div class="space-y-1 flex-1 pr-2">
+              <p class="text-xs text-slate-300 font-medium line-clamp-1 group-hover:text-indigo-300 transition-colors">Webb Telescope detects atmospheric water...</p>
+              <div class="flex items-center gap-2 text-[10px]">
+                <span class="text-emerald-400 font-semibold">96% Fact</span>
+                <span class="text-slate-500">• Peer Reviewed</span>
+              </div>
+            </div>
+            <i data-lucide="chevron-right" class="w-4 h-4 text-slate-600 group-hover:text-slate-300 transition-colors"></i>
+          </div>
+
+          <!-- Claim Item 3 -->
+          <div onclick="openAIReviewModal(3)" class="p-3 bg-slate-900/60 hover:bg-slate-800/80 border border-slate-800/80 rounded-xl cursor-pointer transition-all flex items-center justify-between group">
+            <div class="space-y-1 flex-1 pr-2">
+              <p class="text-xs text-slate-300 font-medium line-clamp-1 group-hover:text-indigo-300 transition-colors">3 cups of coffee eliminates memory decline...</p>
+              <div class="flex items-center gap-2 text-[10px]">
+                <span class="text-amber-400 font-semibold">54% Misleading</span>
+                <span class="text-slate-500">• Overstated</span>
+              </div>
+            </div>
+            <i data-lucide="chevron-right" class="w-4 h-4 text-slate-600 group-hover:text-slate-300 transition-colors"></i>
+          </div>
+        </div>
+
+        <!-- Extension Settings Accordion / Options -->
+        <div class="bg-slate-900/50 rounded-2xl p-3 border border-slate-800/80 space-y-3">
+          <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider px-1">Extension Settings</div>
+          
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-slate-300">Auto-scan new feed posts</span>
+            <input type="checkbox" checked class="accent-indigo-600 rounded">
+          </div>
+          
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-slate-300">Highlight fake headlines red</span>
+            <input type="checkbox" checked class="accent-indigo-600 rounded">
+          </div>
+
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-slate-300">Deep Search AI Engine</span>
+            <span class="text-[11px] text-indigo-400 font-mono">GPT-4o Fact Engine</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Extension Footer Status -->
+      <div class="p-3 border-t border-slate-800 bg-slate-950/80 flex items-center justify-between text-[11px] text-slate-500">
+        <span class="flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-emerald-500"></span> Live Monitoring
+        </span>
+        <a href="#" onclick="showToast('Opened extension settings dashboard')" class="hover:text-slate-300 flex items-center gap-1">
+          <i data-lucide="settings" class="w-3.5 h-3.5"></i> Options
+        </a>
+      </div>
+
+    </aside>
+
+  </div>
+
+  <!-- DETAILED INITIAL AI REVIEW MODAL / DRAWER -->
+  <div id="aiReviewModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md hidden opacity-0 transition-opacity duration-300">
+    
+    <div class="bg-slate-900 border border-slate-800 w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] transform scale-95 transition-transform duration-300" id="modalContainer">
+      
+      <!-- Modal Header -->
+      <div class="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/90 sticky top-0 z-10">
+        <div class="flex items-center gap-3">
+          <div id="modalScoreBadge" class="p-2.5 rounded-2xl flex items-center justify-center font-bold text-sm">
+            <!-- Dynamic Badge Icon -->
+          </div>
+          <div>
+            <h2 class="text-base font-bold text-slate-100 flex items-center gap-2">
+              VeriFact AI Deep Analysis Breakdown
+            </h2>
+            <p class="text-xs text-slate-400" id="modalClaimSource">Verified against 18 cross-reference data nodes</p>
+          </div>
+        </div>
+        
+        <button onclick="closeAIReviewModal()" class="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Modal Body (Scrollable) -->
+      <div class="p-6 overflow-y-auto space-y-6">
+        
+        <!-- Headline & Probability Meter -->
+        <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3">
+          <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Analyzed Post Headline</span>
+          <h3 id="modalHeadline" class="text-base font-semibold text-slate-200 leading-snug">
+            <!-- Headline dynamic text -->
+          </h3>
+
+          <!-- Percentage Progress Bar -->
+          <div class="space-y-1.5 pt-2">
+            <div class="flex justify-between text-xs font-semibold">
+              <span id="modalTruthLabel" class="text-rose-400">Calculated Fake Likelihood</span>
+              <span id="modalTruthPercent" class="text-rose-400 font-mono text-sm">89%</span>
+            </div>
+            <div class="w-full h-3 bg-slate-800 rounded-full overflow-hidden p-0.5">
+              <div id="modalProgressBar" class="h-full rounded-full transition-all duration-1000 bg-rose-500" style="width: 89%"></div>
+            </div>
+            <div class="flex justify-between text-[10px] text-slate-500 pt-0.5">
+              <span>0% (100% Fact)</span>
+              <span>50% (Ambiguous)</span>
+              <span>100% (100% Fake)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Initial AI Breakdown Summary -->
+        <div class="space-y-2">
+          <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+            <i data-lucide="cpu" class="w-4 h-4 text-indigo-400"></i> AI Verdict & Initial Reasoning
+          </h4>
+          <div id="modalSummaryBox" class="p-4 rounded-2xl text-xs text-slate-300 leading-relaxed space-y-2 bg-slate-950/60 border border-slate-800">
+            <!-- AI Detailed Points -->
+          </div>
+        </div>
+
+        <!-- Key Evidence & Primary Sources -->
+        <div class="space-y-2">
+          <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+            <i data-lucide="link" class="w-4 h-4 text-indigo-400"></i> Trusted Fact-Check References & Sources
+          </h4>
+          <div id="modalSourcesList" class="space-y-2">
+            <!-- Sources inserted here -->
+          </div>
+        </div>
+
+        <!-- AI Detected Risk Indicators / Tags -->
+        <div class="space-y-2">
+          <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+            <i data-lucide="shield-alert" class="w-4 h-4 text-indigo-400"></i> Linguistic & Content Signals
+          </h4>
+          <div id="modalTags" class="flex flex-wrap gap-2">
+            <!-- Dynamic Badges -->
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="p-4 border-t border-slate-800 bg-slate-950/90 flex items-center justify-between text-xs">
+        <span class="text-slate-500">Discovered a flaw in this review?</span>
+        <div class="flex items-center gap-2">
+          <button onclick="showToast('Feedback submitted to AI training model!')" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors">
+            Report Misclassification
+          </button>
+          <button onclick="closeAIReviewModal()" class="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors">
+            Done
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div id="toastContainer" class="fixed bottom-5 left-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <!-- JAVASCRIPT CONTROLLER -->
+  <script>
+    // Initialize Lucide Icons
+    lucide.createIcons();
+
+    // Mock Data Store for Fact/Fake Analysis
+    const postData = {
+      1: {
+        headline: "NASA confirms Earth has captured a second moon in permanent orbit, visible to the naked eye starting tonight!",
+        fakePercentage: 89,
+        factPercentage: 11,
+        type: "fake",
+        statusText: "High Risk - Fake / False Claim",
+        riskLevel: "High Risk",
+        summaryPoints: [
+          "<strong>False Celestial Claim:</strong> NASA JPL solar system dynamics database lists '2026-XQ' as a micro-asteroid (approx. 2 meters wide), not a permanent moon.",
+          "<strong>Image Manipulation Detected:</strong> Synthesized astronomical imagery generated using AI diffusion software (94% confidence rating on image scan).",
+          "<strong>Naked Eye Invisibility:</strong> An object of this scale requires a minimum 16-inch optical telescope to observe."
+        ],
+        sources: [
+          { name: "NASA Jet Propulsion Laboratory (JPL) Asteroid Watch", status: "Debunked", url: "https://nasa.gov", verified: true },
+          { name: "Snopes Fact Check Registry", status: "False Flagged", url: "https://snopes.com", verified: true },
+          { name: "Astronomical Journal Peer Review", status: "Contradicted", url: "https://aas.org", verified: true }
+        ],
+        tags: ["Sensationalist Headline", "Manipulated Image", "Debunked by NASA", "Clickbait Spreader"]
+      },
+      2: {
+        headline: "James Webb Space Telescope detects water vapor and carbon dioxide signatures on exoplanet WASP-96b atmosphere.",
+        fakePercentage: 4,
+        factPercentage: 96,
+        type: "fact",
+        statusText: "Verified Fact",
+        riskLevel: "Low Risk",
+        summaryPoints: [
+          "<strong>Official Publication Match:</strong> Matches official release papers from NASA Goddard Space Flight Center and ESA observatory releases.",
+          "<strong>Spectroscopic Proof:</strong> Data verified through Transmission Spectroscopy graphs published in Nature Astrophysics Journal.",
+          "<strong>No Sensational Overstatement:</strong> Headline accurately represents findings without claiming extra-terrestrial life."
+        ],
+        sources: [
+          { name: "NASA Goddard Space Flight Center", status: "Confirmed", url: "https://nasa.gov", verified: true },
+          { name: "Nature Astronomy Journal (Vol 42)", status: "Peer Reviewed", url: "https://nature.com", verified: true }
+        ],
+        tags: ["Peer Reviewed", "Official Science Release", "High Accuracy", "Corroborated Source"]
+      },
+      3: {
+        headline: "New clinical trial reveals drinking 3 cups of dark coffee daily completely eliminates risk of cognitive decline!",
+        fakePercentage: 54,
+        factPercentage: 46,
+        type: "suspicious",
+        statusText: "Misleading / Overstated",
+        riskLevel: "Moderate Risk",
+        summaryPoints: [
+          "<strong>Exaggerated Causation:</strong> Original observational study observed mild statistical correlation (12% lower risk), NOT 100% elimination or direct cure.",
+          "<strong>Commercial Bias Warning:</strong> Study was partially funded by an observational health coffee consortium.",
+          "<strong>Missing Scientific Nuance:</strong> Fails to state confounding health factors like sleep habits, diet, and genetics."
+        ],
+        sources: [
+          { name: "Harvard Health Publishing Archive", status: "Context Missing", url: "https://health.harvard.edu", verified: true },
+          { name: "PubMed Central Database ID #884920", status: "Partially Valid", url: "https://pubmed.ncbi.nlm.nih.gov", verified: true }
+        ],
+        tags: ["Exaggerated Claim", "Correlation != Causation", "Commercial Conflict", "Sensationalized"]
+      }
+    };
+
+    // Toggle Extension Popup Visibility
+    function toggleExtensionPopup() {
+      const popup = document.getElementById('extensionPopup');
+      popup.classList.toggle('translate-x-full');
+    }
+
+    // Toggle In-Page Extension Badges
+    function toggleInPageBadges() {
+      const badges = document.querySelectorAll('.verifact-injected-badge');
+      const isChecked = document.getElementById('toggleBadgesCheckbox').checked;
+      
+      badges.forEach(badge => {
+        if (isChecked) {
+          badge.style.display = 'block';
+        } else {
+          badge.style.display = 'none';
+        }
+      });
+
+      showToast(isChecked ? "Extension badges enabled on page" : "Extension badges hidden");
+    }
+
+    // Open Deep AI Review Modal for specific post ID
+    function openAIReviewModal(postId) {
+      const data = postData[postId];
+      if (!data) return;
+
+      const modal = document.getElementById('aiReviewModal');
+      const container = document.getElementById('modalContainer');
+      const badge = document.getElementById('modalScoreBadge');
+      const headline = document.getElementById('modalHeadline');
+      const truthLabel = document.getElementById('modalTruthLabel');
+      const truthPercent = document.getElementById('modalTruthPercent');
+      const progressBar = document.getElementById('modalProgressBar');
+      const summaryBox = document.getElementById('modalSummaryBox');
+      const sourcesList = document.getElementById('modalSourcesList');
+      const tagsBox = document.getElementById('modalTags');
+
+      headline.innerText = data.headline;
+      
+      // Configure Theme based on Fact/Fake/Suspicious
+      if (data.type === 'fake') {
+        badge.className = "p-2.5 rounded-2xl flex items-center justify-center font-bold text-sm bg-rose-500/20 text-rose-400 border border-rose-500/40";
+        badge.innerHTML = `<i data-lucide="alert-triangle" class="w-6 h-6"></i>`;
+        truthLabel.innerText = "Calculated Fake Likelihood";
+        truthLabel.className = "text-rose-400 font-semibold";
+        truthPercent.innerText = `${data.fakePercentage}% FAKE`;
+        truthPercent.className = "text-rose-400 font-mono font-bold text-base";
+        progressBar.className = "h-full rounded-full transition-all duration-1000 bg-rose-500";
+        progressBar.style.width = `${data.fakePercentage}%`;
+      } else if (data.type === 'fact') {
+        badge.className = "p-2.5 rounded-2xl flex items-center justify-center font-bold text-sm bg-emerald-500/20 text-emerald-400 border border-emerald-500/40";
+        badge.innerHTML = `<i data-lucide="check-circle" class="w-6 h-6"></i>`;
+        truthLabel.innerText = "Calculated Fact Credibility";
+        truthLabel.className = "text-emerald-400 font-semibold";
+        truthPercent.innerText = `${data.factPercentage}% FACT`;
+        truthPercent.className = "text-emerald-400 font-mono font-bold text-base";
+        progressBar.className = "h-full rounded-full transition-all duration-1000 bg-emerald-500";
+        progressBar.style.width = `${data.factPercentage}%`;
+      } else {
+        badge.className = "p-2.5 rounded-2xl flex items-center justify-center font-bold text-sm bg-amber-500/20 text-amber-400 border border-amber-500/40";
+        badge.innerHTML = `<i data-lucide="help-circle" class="w-6 h-6"></i>`;
+        truthLabel.innerText = "Calculated Misleading Likelihood";
+        truthLabel.className = "text-amber-400 font-semibold";
+        truthPercent.innerText = `${data.fakePercentage}% DUBIOUS`;
+        truthPercent.className = "text-amber-400 font-mono font-bold text-base";
+        progressBar.className = "h-full rounded-full transition-all duration-1000 bg-amber-500";
+        progressBar.style.width = `${data.fakePercentage}%`;
+      }
+
+      // Fill Reasoning Summary Points
+      summaryBox.innerHTML = data.summaryPoints.map(point => `
+        <p class="flex items-start gap-2">
+          <span class="text-indigo-400 mt-0.5">•</span>
+          <span>${point}</span>
+        </p>
+      `).join('');
+
+      // Fill Sources List
+      sourcesList.innerHTML = data.sources.map(src => `
+        <div class="p-2.5 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between text-xs">
+          <div class="flex items-center gap-2">
+            <i data-lucide="check-check" class="w-4 h-4 text-emerald-400"></i>
+            <span class="text-slate-200 font-medium">${src.name}</span>
+          </div>
+          <span class="px-2 py-0.5 bg-slate-800 text-slate-300 rounded text-[10px] border border-slate-700">${src.status}</span>
+        </div>
+      `).join('');
+
+      // Fill Tags
+      tagsBox.innerHTML = data.tags.map(tag => `
+        <span class="px-2.5 py-1 bg-slate-800 text-slate-300 border border-slate-700 rounded-lg text-[11px] font-medium flex items-center gap-1">
+          # ${tag}
+        </span>
+      `).join('');
+
+      // Re-initialize dynamic icons in modal
+      lucide.createIcons();
+
+      // Show Modal with Animation
+      modal.classList.remove('hidden');
+      setTimeout(() => {
+        modal.classList.remove('opacity-0');
+        container.classList.remove('scale-95');
+      }, 10);
+    }
+
+    // Close AI Review Modal
+    function closeAIReviewModal() {
+      const modal = document.getElementById('aiReviewModal');
+      const container = document.getElementById('modalContainer');
+      
+      modal.classList.add('opacity-0');
+      container.classList.add('scale-95');
+      setTimeout(() => {
+        modal.classList.add('hidden');
+      }, 300);
+    }
+
+    // Custom Headline / Statement Scanner logic
+    function runCustomTextScan() {
+      const input = document.getElementById('customScanInput').value.trim();
+      const btn = document.getElementById('scanButton');
+      const resultBox = document.getElementById('customScanResult');
+
+      if (!input) {
+        showToast("Please enter a statement or headline to analyze.");
+        return;
+      }
+
+      // Show Loading State
+      btn.disabled = true;
+      btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Analyzing with AI...`;
+      lucide.createIcons();
+
+      setTimeout(() => {
+        // Reset Button
+        btn.disabled = false;
+        btn.innerHTML = `<i data-lucide="search" class="w-3.5 h-3.5"></i> Analyze Statement`;
+        lucide.createIcons();
+
+        // Simulate Analysis Math
+        const isLikelyFake = input.toLowerCase().includes('cure') || input.toLowerCase().includes('secret') || input.toLowerCase().includes('shocking') || input.length % 2 === 0;
+        const score = isLikelyFake ? Math.floor(Math.random() * 25) + 70 : Math.floor(Math.random() * 15) + 5;
+
+        resultBox.classList.remove('hidden');
+        resultBox.innerHTML = `
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold ${isLikelyFake ? 'text-rose-400' : 'text-emerald-400'}">
+              ${isLikelyFake ? `🔴 ${score}% FAKE / UNVERIFIED` : `🟢 ${100 - score}% LIKELY FACT`}
+            </span>
+            <span class="text-[10px] text-slate-500">Just Now</span>
+          </div>
+          <p class="text-[11px] text-slate-300">
+            ${isLikelyFake 
+              ? 'Warning: Statement contains sensationalized indicators and lacks peer-reviewed cross citations in global news registries.' 
+              : 'Statement aligns with established news feed patterns and standard journalistic terminology.'}
+          </p>
+        `;
+        showToast("AI Scan Completed!");
+      }, 1200);
+    }
+
+    // Toast Notification Handler
+    function showToast(message) {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = 'bg-slate-900 border border-slate-700 text-slate-100 text-xs px-3.5 py-2.5 rounded-xl shadow-2xl flex items-center gap-2 transform transition-all duration-300 translate-y-4 opacity-0 pointer-events-auto';
+      toast.innerHTML = `<i data-lucide="info" class="w-4 h-4 text-indigo-400"></i> <span>${message}</span>`;
+      
+      container.appendChild(toast);
+      lucide.createIcons();
+
+      setTimeout(() => {
+        toast.classList.remove('translate-y-4', 'opacity-0');
+      }, 10);
+
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+  </script>
+</body>
+</html>
